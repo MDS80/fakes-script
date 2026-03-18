@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Fakes dos Fakes by MDS
+// @name         Fakes dos fakes by MDS
 // @include      https://pt*.tribalwars.com.pt/game.php?*screen=place*
 // @author       MDS (baseado no trabalho original de oSetas)
 // ==/UserScript==
@@ -16,6 +16,7 @@ var reach2pctCookieName         = 'reach2pct';
 var candidateCookieName         = 'fakeCandidates';
 var maxUnitsCookieName          = 'maxUnits';
 var attacksPerVillageCookieName = 'attacksPerVillage';
+var fillModeCookieName          = 'fillMode'; // 'standard' ou 'spy_focus'
 
 /* =============== UNIT DEFINITIONS =============== */
 var unitGroups = {
@@ -124,24 +125,46 @@ function buildConfig() {
     var cands     = safeParse(getCookie(candidateCookieName), {});
 
     if (reach2pct) {
-        // Começa sempre com 1 spy + 1 ram
-        if (getAvailableUnits('spy') > 0) config.spy = 1;
-        if (getAvailableUnits('ram') > 0) config.ram = 1;
+        var fillMode  = getCookie(fillModeCookieName) || 'standard';
+        var targetPop = Math.ceil(pts * pct);
+        var currentPop = 0;
 
-        var currentPop = config.spy * popFor('spy') + config.ram * popFor('ram');
-        var targetPop  = Math.ceil(pts * pct);
-
-        // Preenche por ordem até atingir targetPop
-        for (var i = 0; i < fillOrder.length && currentPop < targetPop; i++) {
-            var u   = fillOrder[i];
-            var cap = fillCap[u];
-            var avail = getAvailableUnits(u);
-            var current = config[u];
-            while (current < cap && current < avail && currentPop < targetPop) {
-                current++;
-                currentPop += popFor(u);
+        if (fillMode === 'spy_focus') {
+            // Modo: 1 ariete ou catapulta + resto exploradores
+            // Começa com 1 ram (ou 1 cat se não tiver ram)
+            if (getAvailableUnits('ram') > 0) { config.ram = 1; currentPop += popFor('ram'); }
+            else if (getAvailableUnits('catapult') > 0) { config.catapult = 1; currentPop += popFor('catapult'); }
+            // Preenche com exploradores até atingir o mínimo
+            var spyAvail = getAvailableUnits('spy');
+            while (config.spy < spyAvail && currentPop < targetPop) {
+                config.spy++; currentPop += popFor('spy');
             }
-            config[u] = current;
+            // Se ainda não chegou, preenche com as restantes unidades por ordem
+            var restOrder = ['ram', 'catapult', 'axe', 'spear', 'sword', 'light', 'heavy'];
+            for (var j = 0; j < restOrder.length && currentPop < targetPop; j++) {
+                var ru = restOrder[j];
+                var rAvail = getAvailableUnits(ru);
+                while (config[ru] < rAvail && currentPop < targetPop) {
+                    config[ru]++; currentPop += popFor(ru);
+                }
+            }
+        } else {
+            // Modo standard: 1 spy + 1 ram, depois preenche por ordem
+            if (getAvailableUnits('spy') > 0) { config.spy = 1; currentPop += popFor('spy'); }
+            if (getAvailableUnits('ram') > 0) { config.ram = 1; currentPop += popFor('ram'); }
+
+            // Preenche por ordem até atingir targetPop
+            for (var i = 0; i < fillOrder.length && currentPop < targetPop; i++) {
+                var u   = fillOrder[i];
+                var cap = fillCap[u];
+                var avail = getAvailableUnits(u);
+                var current = config[u];
+                while (current < cap && current < avail && currentPop < targetPop) {
+                    current++;
+                    currentPop += popFor(u);
+                }
+                config[u] = current;
+            }
         }
     } else {
         // Sem fake% — usa as caixas manuais / modelo seleccionado
@@ -395,14 +418,33 @@ function createUI() {
     /* FAKE % */
     var pctVal    = getCookie(fakePctCookieName) || '2';
     var reach2pct = getCookie(reach2pctCookieName) === 'true';
+    var fillMode  = getCookie(fillModeCookieName) || 'standard';
+
     var pctDiv = document.createElement('div');
-    pctDiv.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;gap:6px;';
+    pctDiv.style.cssText = 'margin-bottom:4px;display:flex;align-items:center;gap:6px;';
     pctDiv.innerHTML =
         '<span style="color:#a0b4d0">Fake %:</span> <input type="number" id="fakePctInput" value="' + pctVal + '" step="0.1" min="0.1" style="width:50px"> ' +
         '<input type="checkbox" id="reach2pctCheck" ' + (reach2pct ? 'checked' : '') + '> ' +
         '<label for="reach2pctCheck" id="reach2pctLabel" style="font-size:11px;color:#7aa2d4">' +
         (reach2pct ? 'Atingir ' + pctVal + '% mínimo' : '') + '</label>';
     panelBody.appendChild(pctDiv);
+
+
+    // Modo de preenchimento
+    var fillModeDiv = document.createElement('div');
+    fillModeDiv.id = 'fillModeDiv';
+    fillModeDiv.style.cssText = 'margin-bottom:8px;padding:6px 8px;background:#0d1117;border:1px solid #3d5a99;border-radius:4px;font-size:11px;display:' + (reach2pct ? 'block' : 'none') + ';';
+    fillModeDiv.innerHTML =
+        '<div style="color:#7aa2d4;margin-bottom:4px;font-weight:bold">Modo de preenchimento:</div>' +
+        '<label style="display:flex;align-items:center;gap:5px;margin-bottom:3px;cursor:pointer;">' +
+            '<input type="radio" name="fillMode" id="fillModeStandard" value="standard" ' + (fillMode === 'standard' ? 'checked' : '') + '>' +
+            '<span style="color:#c9d1d9">Mais arietes e catapultas</span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;">' +
+            '<input type="radio" name="fillMode" id="fillModeSpyFocus" value="spy_focus" ' + (fillMode === 'spy_focus' ? 'checked' : '') + '>' +
+            '<span style="color:#c9d1d9">1 ariete/cata + exploradores</span>' +
+        '</label>';
+    panelBody.appendChild(fillModeDiv);
 
     /* UNIT BOXES */
     var cands    = safeParse(getCookie(candidateCookieName), {spear:true,sword:true,axe:true,spy:false,light:true,heavy:true,ram:true,catapult:true});
@@ -491,8 +533,16 @@ function createUI() {
     };
     document.getElementById('reach2pctCheck').onchange = function() {
         setCookie(reach2pctCookieName, this.checked, 365);
+        var fmd = document.getElementById('fillModeDiv');
+        if (fmd) fmd.style.display = this.checked ? 'block' : 'none';
         updateReach2pctLabel(); updateStats();
     };
+
+    document.querySelectorAll('input[name="fillMode"]').forEach(function(radio) {
+        radio.onchange = function() {
+            setCookie(fillModeCookieName, this.value, 365);
+        };
+    });
 
     tplSelect.onchange = function() {
         setCookie('troopTemplateName', this.value, 365);
