@@ -1,3 +1,7 @@
+console.log('Fakes script carregado');
+alert('Fakes script carregado');
+console.log('game_data:', typeof game_data !== 'undefined' ? game_data.screen : 'sem game_data');
+
 // ==UserScript==
 // @name         Fakes dos Fakes by MDS
 // @include      https://pt*.tribalwars.com.pt/game.php?*screen=place*
